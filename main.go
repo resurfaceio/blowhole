@@ -2,17 +2,16 @@ package main
 
 import (
 	"fmt"
+	"github.com/schollz/progressbar/v3"
+	"github.com/valyala/fasthttp"
 	"log"
 	"math"
-	"net/http"
 	"sync"
-
-	"github.com/schollz/progressbar/v3"
 )
 
 type testParams struct {
 	runCounter     int
-	client         http.Client
+	client         fasthttp.Client
 	url            string
 	paths          []string
 	rateLimit      float64
@@ -25,14 +24,16 @@ type testParams struct {
 
 func main() {
 	params := &testParams{
-		runCounter:     4,
-		client:         http.Client{},
-		url:            "https://google.com",
+		runCounter: 12,
+		client: fasthttp.Client{
+			MaxConnsPerHost: 1024,
+		},
+		url:            "http://localhost:8080/http-bin/",
 		paths:          []string{},
 		rateLimit:      0,
 		concurrency:    100,
 		respList:       [6]int{},
-		requestsTarget: 10000,
+		requestsTarget: 1000000,
 		statusChan:     make(chan int, 1000),
 		userCount:      0,
 	}
@@ -50,6 +51,7 @@ func runTest(params *testParams) {
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowIts(),
 		progressbar.OptionFullWidth(),
+		progressbar.OptionShowCount(),
 		progressbar.OptionSetItsString("requests"),
 	)
 	for i := 0; i < params.concurrency; i++ {
@@ -57,22 +59,11 @@ func runTest(params *testParams) {
 		go func(params *testParams, target int, userID int) {
 			defer wg.Done()
 			for i := 0; i < target; i++ {
-				req, err := http.NewRequest("GET", params.url, nil)
-				req.Header.Set("ID", fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i))
+				reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
+				sendRequest(params, reqID)
+				err := pbar.Add(1)
 				if err != nil {
-					log.Fatal(err)
-				}
-				resp, err := params.client.Do(req)
-				if err != nil {
-					if resp == nil {
-						log.Fatalf("\n==================\nNo host was found at %s\nDouble check the URL and try again.\n==================", params.url)
-					}
-					log.Fatal(err)
-				}
-				params.statusChan <- resp.StatusCode
-				err = pbar.Add(1)
-				if err != nil {
-					log.Fatal(err)
+					log.Println(err)
 				}
 			}
 		}(params, userRequestTarget, i)
@@ -105,5 +96,23 @@ work:
 		if !open {
 			break work
 		}
+	}
+}
+
+func sendRequest(params *testParams, id string) {
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	req.Header.Set("id", id)
+	req.SetRequestURI(params.url)
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+	err := fasthttp.Do(req, resp)
+	if err != nil {
+		log.Println(err)
+	}
+	if resp != nil {
+		params.statusChan <- resp.StatusCode()
+	} else {
+		log.Println("No response returned***")
 	}
 }
