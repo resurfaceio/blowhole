@@ -10,44 +10,53 @@ import (
 )
 
 type testParams struct {
-	runCounter     int
-	client         fasthttp.Client
-	url            string
-	paths          []string
-	rateLimit      float64
-	concurrency    int
-	respList       [6]int
-	requestsTarget int
-	statusChan     chan int
-	userCount      int
+	runCounter      int
+	client          fasthttp.Client
+	url             string
+	rateLimit       float64
+	concurrency     int
+	respList        [6]int
+	requests        int
+	statusChan      chan int
+	userCount       int
+	master          bool
+	worker          bool
+	expectedWorkers int
 }
 
 func main() {
 	params := &testParams{
-		runCounter: 12,
-		client: fasthttp.Client{
-			MaxConnsPerHost: 1024,
-		},
-		url:            "http://localhost:8080/http-bin/",
-		paths:          []string{},
-		rateLimit:      0,
-		concurrency:    100,
-		respList:       [6]int{},
-		requestsTarget: 1000000,
-		statusChan:     make(chan int, 1000),
-		userCount:      0,
+		runCounter:      12,
+		client:          fasthttp.Client{},
+		url:             "http://localhost:8080/http-bin/",
+		rateLimit:       0,
+		concurrency:     200,
+		respList:        [6]int{},
+		requests:        1000000,
+		statusChan:      make(chan int, 1000),
+		userCount:       0,
+		master:          true,
+		worker:          false,
+		expectedWorkers: 0,
 	}
-	runTest(params)
+
+	if params.master {
+		startDistributedTest(params)
+	} else if params.worker {
+		startDistributedWorker()
+	} else {
+		startLumpedTest(params)
+	}
 }
 
-func runTest(params *testParams) {
+func startLumpedTest(params *testParams) {
 	//respList <[100s, 200s, 300s, 400s, 500s, unknowns]>
 
 	go statWorker(params)
 	var wg sync.WaitGroup
-	userRequestTarget := int(math.Ceil(float64(params.requestsTarget) / float64(params.concurrency)))
-	log.Printf("\n=================================\nTest Running\nConcurrency target: %d\nResquests target: %d\n=================================", params.concurrency, params.requestsTarget)
-	pbar := progressbar.NewOptions(params.requestsTarget,
+	userRequestTarget := int(math.Ceil(float64(params.requests) / float64(params.concurrency)))
+	log.Printf("\n=================================\nTest Running\nConcurrency target: %d\nResquests target: %d\n=================================", params.concurrency, params.requests)
+	pbar := progressbar.NewOptions(params.requests,
 		progressbar.OptionEnableColorCodes(true),
 		progressbar.OptionShowIts(),
 		progressbar.OptionFullWidth(),

@@ -1,0 +1,14 @@
+syntax = "proto3";
+option go_package = ""
+
+message  RegisterRequest {
+
+}
+
+message RegistrationResponse {
+
+}
+
+service register {
+  rpc Create(RegisterRequest) returns (RegistrationResponse);
+}
