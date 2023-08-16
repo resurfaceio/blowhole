@@ -1,14 +1,26 @@
 syntax = "proto3";
-option go_package = ""
+option go_package = "github.com/resurfaceio/blowhole/distributed";
 
-message  RegisterRequest {
+message  IDRequest {}
 
+message IDResponse {
+  int64 workerID = 1;
+  int64 requests = 2;
+  int64 concurrency = 3;
 }
 
-message RegistrationResponse {
-
+message StatsRequest {
+  string responses = 1;
 }
 
-service register {
-  rpc Create(RegisterRequest) returns (RegistrationResponse);
+message StatsResponse {
+  int64 status = 1;
+}
+
+service identify {
+  rpc Create(IDRequest) returns (IDResponse);
+}
+
+service stats {
+  rpc Create(StatsRequest) returns (StatsResponse);
 }

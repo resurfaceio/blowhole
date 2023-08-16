@@ -30,14 +30,14 @@ func main() {
 		client:          fasthttp.Client{},
 		url:             "http://localhost:8080/http-bin/",
 		rateLimit:       0,
-		concurrency:     200,
+		concurrency:     10,
 		respList:        [6]int{},
-		requests:        1000000,
+		requests:        1000,
 		statusChan:      make(chan int, 1000),
 		userCount:       0,
 		master:          true,
 		worker:          false,
-		expectedWorkers: 0,
+		expectedWorkers: 2,
 	}
 
 	if params.master {
