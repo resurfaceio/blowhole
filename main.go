@@ -5,8 +5,8 @@ import (
 	"github.com/schollz/progressbar/v3"
 	"github.com/valyala/fasthttp"
 	"log"
-	"math"
 	"sync"
+	"time"
 )
 
 type testParams struct {
@@ -26,24 +26,29 @@ type testParams struct {
 
 func main() {
 	params := &testParams{
-		runCounter:      12,
-		client:          fasthttp.Client{},
-		url:             "http://localhost:8080/http-bin/",
+		runCounter: 12,
+		client: fasthttp.Client{
+			MaxConnsPerHost:               1500,
+			ReadTimeout:                   2 * time.Second,
+			WriteTimeout:                  2 * time.Second,
+			DisableHeaderNamesNormalizing: true,
+		},
+		url:             "http://localhost:8080/http-bin/png",
 		rateLimit:       0,
-		concurrency:     10,
+		concurrency:     100,
 		respList:        [6]int{},
 		requests:        1000,
 		statusChan:      make(chan int, 1000),
 		userCount:       0,
-		master:          true,
-		worker:          false,
+		master:          false,
+		worker:          true,
 		expectedWorkers: 2,
 	}
 
 	if params.master {
 		startDistributedTest(params)
 	} else if params.worker {
-		startDistributedWorker()
+		startDistributedWorker(params)
 	} else {
 		startLumpedTest(params)
 	}
@@ -54,7 +59,8 @@ func startLumpedTest(params *testParams) {
 
 	go statWorker(params)
 	var wg sync.WaitGroup
-	userRequestTarget := int(math.Ceil(float64(params.requests) / float64(params.concurrency)))
+	remainder := params.requests % params.concurrency
+	userRequestTarget := (params.requests - remainder) / params.concurrency
 	log.Printf("\n=================================\nTest Running\nConcurrency target: %d\nResquests target: %d\n=================================", params.concurrency, params.requests)
 	pbar := progressbar.NewOptions(params.requests,
 		progressbar.OptionEnableColorCodes(true),
@@ -69,7 +75,8 @@ func startLumpedTest(params *testParams) {
 			defer wg.Done()
 			for i := 0; i < target; i++ {
 				reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
-				sendRequest(params, reqID)
+				resp := sendRequest(params, reqID)
+				params.statusChan <- resp.StatusCode()
 				err := pbar.Add(1)
 				if err != nil {
 					log.Println(err)
@@ -77,6 +84,19 @@ func startLumpedTest(params *testParams) {
 			}
 		}(params, userRequestTarget, i)
 	}
+	wg.Add(1)
+	go func(params *testParams, target int, userID int) {
+		defer wg.Done()
+		for i := 0; i < target; i++ {
+			reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
+			resp := sendRequest(params, reqID)
+			params.statusChan <- resp.StatusCode()
+			err := pbar.Add(1)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+	}(params, remainder, -1)
 
 	wg.Wait()
 	log.Printf("\n====================================================================\nResponse Codes Received:\n1xx: %d | 2xx: %d | 3xx: %d | 4xx: %d | 5xx: %d | Unknown: %d\n====================================================================", params.respList[0], params.respList[1], params.respList[2], params.respList[3], params.respList[4], params.respList[5])
@@ -108,7 +128,7 @@ work:
 	}
 }
 
-func sendRequest(params *testParams, id string) {
+func sendRequest(params *testParams, id string) *fasthttp.Response {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	req.Header.Set("id", id)
@@ -120,8 +140,33 @@ func sendRequest(params *testParams, id string) {
 		log.Println(err)
 	}
 	if resp != nil {
-		params.statusChan <- resp.StatusCode()
+		return resp
 	} else {
 		log.Println("No response returned***")
+		return nil
 	}
 }
+
+//type countingConn struct {
+//	net.Conn
+//	bytesRead, bytesWritten *int64
+//}
+
+//var fasthttpDialFunc = func(
+//	bytesRead, bytesWritten *int64,
+//) func(string) (net.Conn, error) {
+//	return func(address string) (net.Conn, error) {
+//		conn, err := net.Dial("tcp", address)
+//		if err != nil {
+//			return nil, err
+//		}
+//
+//		wrappedConn := &countingConn{
+//			Conn:         conn,
+//			bytesRead:    bytesRead,
+//			bytesWritten: bytesWritten,
+//		}
+//
+//		return wrappedConn, nil
+//	}
+//}

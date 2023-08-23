@@ -10,7 +10,7 @@ message IDResponse {
 }
 
 message StatsRequest {
-  string responses = 1;
+  repeated int64 responses = 1;
 }
 
 message StatsResponse {
