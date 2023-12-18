@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
-	distributed "github.com/resurfaceio/blowhole/DistributedServices"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"math"
 	"net"
 	"sync"
 	"time"
+
+	distributed "github.com/resurfaceio/blowhole/DistributedServices"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type myIdentifyServer struct {
@@ -127,9 +128,9 @@ func startDistributedWorker(params *testParams) {
 			defer wg.Done()
 			for i := 0; i < target; i++ {
 				reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
-				resp := sendRequest(params, reqID)
+				respCode := sendRequest(params, reqID)
 				if len(respCodes) < 50 {
-					respCodes = append(respCodes, int64(resp.StatusCode()))
+					respCodes = append(respCodes, int64(respCode))
 				} else {
 					workerSendStats(respCodes, clientStats)
 				}
