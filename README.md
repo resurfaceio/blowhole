@@ -5,7 +5,7 @@ Load test servers with unique requests.
 # Build
 
 ```bash
-go -o ./blowhole .
+go build -o ./blowhole .
 ```
 
 # Usage
