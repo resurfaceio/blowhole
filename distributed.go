@@ -127,7 +127,7 @@ func startDistributedWorker(params *testParams) {
 			var respCodes []int64
 			defer wg.Done()
 			for i := 0; i < target; i++ {
-				reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
+				reqID := fmt.Sprintf("%s.UID%05d.CID%06d", params.runID, userID, i)
 				respCode := sendRequest(params, reqID)
 				if len(respCodes) < 50 {
 					respCodes = append(respCodes, int64(respCode.code))

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -17,7 +18,8 @@ type respStatus struct {
 }
 
 type testParams struct {
-	runCounter      int
+	name            string
+	runID           string
 	client          fasthttp.Client
 	url             string
 	rateLimit       float64
@@ -34,63 +36,120 @@ type testParams struct {
 	pbar            *progressbar.ProgressBar
 }
 
-const separator string = "===================="
+const separator string = "============================================================"
+
+var initMessage string = "\nTest: %21s\nRun ID: %18s\nRequests target: %7d\nConcurrency level: %2d"
+var resultMessage string = "\nRequests sent: %d\nResponse codes received: \n  1xx: %d | 2xx: %d | 3xx: %d | 4xx: %d | 5xx: %d | Unknown: %d"
 
 func main() {
-	run := flag.Int("run", 1, "int. Run counter to use as RID in id header")
+	runc := flag.Int("run", 1, "int. Run counter to use as RID in id header")
 	c := flag.Int("c", 1, "int. Number of concurrent connections")
 	n := flag.Int("n", 1, "int. Number of requests to perform")
 	targetUrl := flag.String("url", "http://localhost:8000/", "string. Target URL to perform requests for")
 	readTimeout := flag.Int("rtimeout", 500, "int. Maximum duration for full response reading (including body) in milliseconds")
 	writeTimeout := flag.Int("wtimeout", 500, "int. Maximum duration for full request writing (including body) in milliseconds")
 	maxConnections := flag.Int("maxconn", 1000, "int. Maximum number of connections per each host which may be established.")
+	isDistributed := flag.Bool("distributed", false, "bool. Blowhole will perform requests using distributed clients if set.")
+	isWorker := flag.Bool("worker", false, "bool. Blowhole instance will act as distributed worker if set. It has no effect unless \"distributed\" is also set.")
+	output := flag.String("o", "", "string. Output destination for results. If not set, defaults to stdout.")
+	batchFile := flag.String("file", "", "string. Path of YAML file describing a batch of runs")
 	flag.Parse()
 
-	params := &testParams{
-		runCounter: *run,
-		client: fasthttp.Client{
-			MaxConnsPerHost:               *maxConnections,
-			ReadTimeout:                   time.Duration(*readTimeout) * time.Millisecond,
-			WriteTimeout:                  time.Duration(*writeTimeout) * time.Millisecond,
-			DisableHeaderNamesNormalizing: true,
-		},
-		url:             *targetUrl,
-		rateLimit:       0,
-		concurrentUsers: *c,
-		responseCodes:   [6]int{},
-		totalRequests:   *n,
-		statusChan:      make(chan respStatus, 1000),
-		errorCount:      make(map[string]int),
-		userCount:       0,
-		master:          false,
-		worker:          false,
-		expectedWorkers: 2,
-		pbar: progressbar.NewOptions(*n,
-			progressbar.OptionEnableColorCodes(true),
-			progressbar.OptionShowIts(),
-			progressbar.OptionFullWidth(),
-			progressbar.OptionShowCount(),
-			progressbar.OptionSetItsString("requests"),
-			progressbar.OptionShowElapsedTimeOnFinish(),
-		),
+	var batch batchSpec
+	if *batchFile != "" {
+		batch.getConf(*batchFile)
+	} else {
+		batch = batchSpec{
+			Name: "unnamed",
+			Url:  *targetUrl,
+			Runs: []runConf{{
+				Requests:    *n,
+				Concurrency: *c,
+			}},
+			IsDistributed: *isDistributed,
+			IsWorker:      *isWorker,
+			Output:        *output,
+		}
+
 	}
 
-	if params.master {
-		startDistributedTest(params)
-	} else if params.worker {
-		startDistributedWorker(params)
-	} else {
-		startLumpedTest(params)
+	if batch.Output != "" {
+		file, err := os.OpenFile(batch.Output, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+		log.SetOutput(file)
+
+		initMessage = "test %s,%s,%d,%d"
+		resultMessage = "%d, %[7]d"
 	}
+
+	for i, run := range batch.Runs {
+		params := &testParams{
+			name: batch.Name,
+			client: fasthttp.Client{
+				MaxConnsPerHost:               *maxConnections,
+				ReadTimeout:                   time.Duration(*readTimeout) * time.Millisecond,
+				WriteTimeout:                  time.Duration(*writeTimeout) * time.Millisecond,
+				DisableHeaderNamesNormalizing: true,
+			},
+			url:             batch.Url,
+			rateLimit:       0,
+			concurrentUsers: run.Concurrency,
+			responseCodes:   [6]int{},
+			totalRequests:   run.Requests,
+			statusChan:      make(chan respStatus, 1000),
+			errorCount:      make(map[string]int),
+			userCount:       0,
+			master:          batch.IsDistributed && !batch.IsWorker,
+			worker:          batch.IsDistributed && batch.IsWorker,
+			expectedWorkers: 2,
+			pbar: progressbar.NewOptions(run.Requests,
+				progressbar.OptionEnableColorCodes(true),
+				progressbar.OptionShowIts(),
+				progressbar.OptionSetWidth(len(separator)),
+				progressbar.OptionShowCount(),
+				progressbar.OptionSetItsString("requests"),
+				progressbar.OptionShowElapsedTimeOnFinish(),
+			),
+		}
+
+		if *runc == 1 {
+			params.runID = fmt.Sprintf("RID%03d", i+1)
+		} else {
+			params.runID = fmt.Sprintf("RID%03d", *runc)
+		}
+
+		if run.CustomID != "" {
+			params.runID = run.CustomID
+		}
+
+		if run.CustomURL != "" {
+			params.url = run.CustomURL
+		}
+
+		if params.master {
+			startDistributedTest(params)
+		} else if params.worker {
+			startDistributedWorker(params)
+		} else {
+			startLumpedTest(params)
+		}
+
+	}
+
 }
 
 func startLumpedTest(params *testParams) {
-	log.SetPrefix("\n\n")
 	go statusWorker(params)
 
 	remainder := params.totalRequests % params.concurrentUsers
 	requestsPerUser := (params.totalRequests - remainder) / params.concurrentUsers
-	log.Printf("%[1]s\nTest Running\nConcurrency target: %d\nRequests target: %d\n%[1]s%[1]s\n\n", separator, params.concurrentUsers, params.totalRequests)
+
+	fmt.Printf("%s\nTest \"%s\" running - Run: %s\n\n", separator, params.name, params.runID)
+	log.Printf(initMessage, params.name, params.runID, params.totalRequests, params.concurrentUsers)
+	fmt.Println()
 
 	var i int
 	params.wg.Add(params.concurrentUsers)
@@ -107,24 +166,24 @@ func startLumpedTest(params *testParams) {
 
 	params.wg.Wait()
 
-	log.Printf("%[1]s%[1]s\nResponses received: %d\nResponse Codes Received:\n1xx: %d | 2xx: %d | 3xx: %d | 4xx: %d | 5xx: %d | Unknown: %d\n\n", separator,
-		params.responseCodes[0]+params.responseCodes[1]+params.responseCodes[2]+params.responseCodes[3]+params.responseCodes[4]+params.responseCodes[5],
+	fmt.Print("\n\n")
+	log.Printf(resultMessage, params.responseCodes[0]+params.responseCodes[1]+params.responseCodes[2]+params.responseCodes[3]+params.responseCodes[4]+params.responseCodes[5],
 		params.responseCodes[0], params.responseCodes[1], params.responseCodes[2], params.responseCodes[3], params.responseCodes[4], params.responseCodes[5])
 
-	log.SetPrefix("")
-	log.Printf("%[1]s%[1]s%[1]s\nError count:", separator)
-	log.SetFlags(0)
-	for e, c := range params.errorCount {
-		log.Printf(" - %d: \"%s\"", c, e)
+	if len(params.errorCount) != 0 {
+		fmt.Println("Error count:")
 	}
-	log.Printf("%[1]s%[1]s%[1]s%[1]s\n\n", separator)
+	for e, c := range params.errorCount {
+		fmt.Printf("  + %d: \"%s\"\n", c, e)
+	}
+	fmt.Println(separator)
 }
 
 func iterate(params *testParams, target int, userID int) {
 	defer params.wg.Done()
 
 	for i := 0; i < target; i++ {
-		reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
+		reqID := fmt.Sprintf("%s.UID%05d.CID%06d", params.runID, userID, i)
 		params.statusChan <- sendRequest(params, reqID)
 		err := params.pbar.Add(1)
 		if err != nil {
@@ -178,7 +237,6 @@ func sendRequest(params *testParams, id string) (res respStatus) {
 		res.code = resp.StatusCode()
 	}
 	return
-
 }
 
 //type countingConn struct {

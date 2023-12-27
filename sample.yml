@@ -1,0 +1,14 @@
+name: mytest
+url: http://localhost:8080/json
+runs:
+  - requests: 5
+    concurrency: 3
+  - requests: 900
+    concurrency: 10
+  - requests: 100
+    concurrency: 100
+    url: http://myurl/bar
+  - id: runx
+    requests: 1000
+    concurrency: 10
+
