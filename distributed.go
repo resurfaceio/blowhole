@@ -48,8 +48,8 @@ func startDistributedTest(params *testParams) {
 	var reqPerWorker int64
 	var concPerWorker int64
 	if expectedWorkers > 1 {
-		reqPerWorker = int64(math.Ceil(float64(params.requests) / float64(expectedWorkers)))
-		concPerWorker = int64(math.Ceil(float64(params.concurrency) / float64(expectedWorkers)))
+		reqPerWorker = int64(math.Ceil(float64(params.totalRequests) / float64(expectedWorkers)))
+		concPerWorker = int64(math.Ceil(float64(params.concurrentUsers) / float64(expectedWorkers)))
 	} else {
 		log.Fatalf("\n*****************\nCannot run distributed test with less than 2 'expected workers'\n*****************")
 	}
@@ -130,7 +130,7 @@ func startDistributedWorker(params *testParams) {
 				reqID := fmt.Sprintf("RID%03d.UID%05d.CID%06d", params.runCounter, userID, i)
 				respCode := sendRequest(params, reqID)
 				if len(respCodes) < 50 {
-					respCodes = append(respCodes, int64(respCode))
+					respCodes = append(respCodes, int64(respCode.code))
 				} else {
 					workerSendStats(respCodes, clientStats)
 				}
