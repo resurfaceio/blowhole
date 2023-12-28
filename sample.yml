@@ -11,4 +11,3 @@ runs:
   - id: runx
     requests: 1000
     concurrency: 10
-

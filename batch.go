@@ -14,7 +14,6 @@ type batchSpec struct {
 	Url           string    `yaml:"url"`
 	Runs          []runConf `yaml:"runs"`
 	Output        string    `yaml:"output"`
-	Format        string    `yaml:"format"`
 }
 
 type runConf struct {
