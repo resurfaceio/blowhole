@@ -115,13 +115,6 @@ Header 10: "id: RID001.UID00001.CID000004"
 ### Output to a file
 
 Results can be written to a local file using the `-o` option.
-Two lines will be logged for each run, with comma-separated values in each line as follows:
-
-```
-Line 1: Timestamp test_name,run_id,n,c
-Line 2: Tiemstamp requests_sent,average_rps,failed_requests
-```
-
 
 ```bash
 # 100 requests for a /json resource served at localhost:8000
@@ -145,6 +138,13 @@ Line 2: Tiemstamp requests_sent,average_rps,failed_requests
 # Contents of "out.log"
 # 2023/12/28 15:17:26 test unnamed,RID001,30000,1000
 # 2023/12/28 15:17:30 30000,7089,81
+```
+
+Two lines will be logged for each run, with comma-separated values in each line as follows:
+
+```
+Line 1: Start_timestamp test_name,run_id,n,c
+Line 2: End_timestamp requests_sent,average_rps,failed_requests
 ```
 
 ### Tweak client
