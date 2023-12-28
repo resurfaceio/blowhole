@@ -34,12 +34,13 @@ type testParams struct {
 	expectedWorkers int
 	wg              sync.WaitGroup
 	pbar            *progressbar.ProgressBar
+	rps             float64
 }
 
 const separator string = "============================================================"
 
 var initMessage string = "\nTest: %21s\nRun ID: %18s\nRequests target: %7d\nConcurrency level: %2d"
-var resultMessage string = "\nRequests sent: %d\nResponse codes received: \n  1xx: %d | 2xx: %d | 3xx: %d | 4xx: %d | 5xx: %d | Unknown: %d"
+var resultMessage string = "\nRequests sent: %d\nAverage RPS: %.0f\nResponse codes received: \n  1xx: %d | 2xx: %d | 3xx: %d | 4xx: %d | 5xx: %d | Unknown: %d"
 
 func main() {
 	runc := flag.Int("run", 1, "int. Run counter to use as RID in id header")
@@ -82,7 +83,7 @@ func main() {
 		log.SetOutput(file)
 
 		initMessage = "test %s,%s,%d,%d"
-		resultMessage = "%d, %[7]d"
+		resultMessage = "%d,%.0f,%[8]d"
 	}
 
 	for i, run := range batch.Runs {
@@ -113,13 +114,14 @@ func main() {
 				progressbar.OptionSetItsString("requests"),
 				progressbar.OptionShowElapsedTimeOnFinish(),
 			),
+			rps: 0,
 		}
 
-		if *runc == 1 {
-			params.runID = fmt.Sprintf("RID%03d", i+1)
-		} else {
-			params.runID = fmt.Sprintf("RID%03d", *runc)
+		rid := *runc
+		if rid == 1 {
+			rid = i + 1
 		}
+		params.runID = fmt.Sprintf("RID%03d", rid)
 
 		if run.CustomID != "" {
 			params.runID = run.CustomID
@@ -168,7 +170,7 @@ func startLumpedTest(params *testParams) {
 
 	fmt.Print("\n\n")
 	log.Printf(resultMessage, params.responseCodes[0]+params.responseCodes[1]+params.responseCodes[2]+params.responseCodes[3]+params.responseCodes[4]+params.responseCodes[5],
-		params.responseCodes[0], params.responseCodes[1], params.responseCodes[2], params.responseCodes[3], params.responseCodes[4], params.responseCodes[5])
+		params.rps*1024/float64(params.totalRequests), params.responseCodes[0], params.responseCodes[1], params.responseCodes[2], params.responseCodes[3], params.responseCodes[4], params.responseCodes[5])
 
 	if len(params.errorCount) != 0 {
 		fmt.Println("Error count:")
@@ -189,6 +191,7 @@ func iterate(params *testParams, target int, userID int) {
 		if err != nil {
 			log.Println(err)
 		}
+		params.rps += params.pbar.State().KBsPerSecond
 	}
 }
 
