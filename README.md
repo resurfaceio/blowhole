@@ -279,4 +279,4 @@ id          string      String to replace `RIDxxx` substring in "id" header
 
 
 ---
-<small>&copy; 2016-2023 <a href="https://resurface.io">Graylog, Inc.</a></small>
+<small>&copy; 2016-2024 <a href="https://resurface.io">Graylog, Inc.</a></small>
